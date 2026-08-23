@@ -84,7 +84,7 @@ export const Receipt: React.FC<ReceiptProps> = ({ receipt, studentDetails, onClo
             {isGst ? (
               <tbody className="text-sm">
                 <tr>
-                  <td className="py-3 text-foreground font-medium">Value of Supply of Service (Coaching Fee)</td>
+                  <td className="py-3 text-foreground font-medium">Value of Supply of Service (Coaching Fee){receipt.fee_installments?.name ? ` - ${receipt.fee_installments.name}` : ''}</td>
                   <td className="py-3 text-right">₹{baseAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                 </tr>
                 <tr>
@@ -103,7 +103,7 @@ export const Receipt: React.FC<ReceiptProps> = ({ receipt, studentDetails, onClo
             ) : (
               <tbody>
                 <tr>
-                  <td className="py-4 text-foreground font-medium">Fee Payment <span className="text-muted-foreground text-sm font-normal">({receipt.payment_mode})</span></td>
+                  <td className="py-4 text-foreground font-medium">Fee Payment{receipt.fee_installments?.name ? ` - ${receipt.fee_installments.name}` : ''}</td>
                   <td className="py-4 text-right font-bold text-xl text-primary">₹{totalAmount.toLocaleString()}</td>
                 </tr>
               </tbody>

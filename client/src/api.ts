@@ -167,9 +167,10 @@ export const api = {
     return data;
   },
 
-  generateReceiptNumber: async (_entityId: string, entityName: string) => {
+  generateReceiptNumber: async (_entityId: string, entityName: string, paymentMode: string = 'CASH') => {
     const initials = entityName.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 3).toUpperCase();
-    const prefix = initials || 'GKL';
+    const modeCode = paymentMode.toUpperCase() === 'CASH' ? 'C' : 'B';
+    const prefix = `${initials || 'GKL'}-${modeCode}`;
     const year = new Date().getFullYear();
 
     const { data, error } = await supabase
@@ -184,8 +185,8 @@ export const api = {
     if (data && data.length > 0 && data[0].receipt_number) {
       const lastNumber = data[0].receipt_number;
       const parts = lastNumber.split('-');
-      if (parts.length === 3) {
-        const nextNum = parseInt(parts[2], 10) + 1;
+      if (parts.length === 4) {
+        const nextNum = parseInt(parts[3], 10) + 1;
         return `${prefix}-${year}-${nextNum.toString().padStart(4, '0')}`;
       }
     }
@@ -217,7 +218,7 @@ export const api = {
     const incomes = [];
 
     for (const group of Object.values(groupedAllocations)) {
-      const receipt_number = await api.generateReceiptNumber(group.entity_id, group.entity_name);
+      const receipt_number = await api.generateReceiptNumber(group.entity_id, group.entity_name, paymentData.payment_mode);
       
       // 1. Insert Income
       const { data: income, error: incomeError } = await supabase.from('incomes').insert({
@@ -263,7 +264,7 @@ export const api = {
     // Fetch the full income rows with entity details to return
     const { data: fullIncomes } = await supabase
       .from('incomes')
-      .select(`*, entities(name, has_gst)`)
+      .select(`*, entities(name, has_gst), fee_installments(name)`)
       .in('id', incomes.map(i => i.id));
 
     return fullIncomes || incomes;

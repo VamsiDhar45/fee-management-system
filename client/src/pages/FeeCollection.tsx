@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { Search, IndianRupee, ArrowRight, CheckCircle2, AlertCircle, Clock, FileText } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -10,6 +11,7 @@ import { Label } from '../components/ui/label';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const FeeCollection: React.FC = () => {
+  const navigate = useNavigate();
   const [students, setStudents] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState('');
@@ -199,7 +201,7 @@ export const FeeCollection: React.FC = () => {
               <Receipt 
                 receipt={receipt} 
                 studentDetails={studentDetails} 
-                onClose={() => {}} 
+                onClose={() => navigate('/students')} 
                 showSuccessIcon={false} 
               />
             </div>
@@ -207,7 +209,7 @@ export const FeeCollection: React.FC = () => {
         </div>
 
         <div className="flex justify-center mt-8 no-print">
-          <Button size="lg" onClick={() => setSuccessReceipts(null)}>
+          <Button size="lg" onClick={() => navigate('/students')}>
             Record Another Payment
           </Button>
         </div>
