@@ -103,7 +103,7 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
 
   const submitMutation = useMutation({
     mutationFn: (data: any) => api.submitExpense(data),
-    onSuccess: (data, variables) => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
       
       const cat = categories.find(c => c.id === variables.category_id);
