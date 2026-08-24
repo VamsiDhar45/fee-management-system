@@ -7,7 +7,7 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function run() {
-  await supabase.from('entities').update({ name: 'Gurukul for MEC, CA & CMA', has_gst: true }).ilike('name', '%gurukul east%');
+  await supabase.from('entities').update({ name: 'Gurukul for CA & CMA', has_gst: true }).ilike('name', '%gurukul east%');
   await supabase.from('entities').update({ name: 'Chanakya Bhavan' }).ilike('name', '%gurukul north%');
   await supabase.from('entities').update({ name: 'Gowtham Degree College' }).ilike('name', '%gurukul south%');
   await supabase.from('entities').update({ name: 'Gurukul Junior College (Jnanamudra Educational Society)' }).ilike('name', '%gurukul west%');
