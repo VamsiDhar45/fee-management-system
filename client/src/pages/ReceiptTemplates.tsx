@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Receipt } from '../components/Receipt';
 import { ReceiptClassic } from '../components/ReceiptClassic';
 import { ReceiptMinimal } from '../components/ReceiptMinimal';

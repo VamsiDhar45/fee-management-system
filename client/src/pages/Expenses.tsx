@@ -39,7 +39,6 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
 
   const [categories, setCategories] = useState<any[]>([]);
   const [entities, setEntities] = useState<any[]>([]);
-  const [batches, setBatches] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   
 
@@ -61,12 +60,10 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
     // Fetch dropdown data once
     Promise.all([
       api.getExpenseCategories(),
-      api.getEntities(),
-      api.getBatches()
-    ]).then(([catData, entData, batchData]) => {
+      api.getEntities()
+    ]).then(([catData, entData]) => {
       setCategories(catData || []);
       setEntities(entData || []);
-      setBatches(batchData || []);
     }).catch(console.error);
   }, []);
 
