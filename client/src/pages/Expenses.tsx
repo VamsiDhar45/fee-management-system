@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Check, X, CreditCard, Clock, Image as ImageIcon, Search, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
+import { Plus, Check, X, CreditCard, Clock, Image as ImageIcon, Search, ChevronLeft, ChevronRight, FileText, Printer } from 'lucide-react';
 import { api } from '../api';
 import { Modal } from '../components/Modal';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -8,7 +8,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { motion } from 'framer-motion';
-
+import { generatePaymentVoucher } from '../lib/voucherPdf';
 const containerVariants = {
   hidden: { opacity: 0 },
   show: {
@@ -101,6 +101,14 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
     }
   };
 
+  const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
+
+  const handlePaymentProofChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setPaymentProofFile(e.target.files[0]);
+    }
+  };
+
   const submitMutation = useMutation({
     mutationFn: (data: any) => api.submitExpense(data),
     onSuccess: (_data, variables) => {
@@ -122,6 +130,7 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
         entity_id: '', batch_id: '', category_id: '', amount: '', description: '', payment_mode: 'CASH', expense_date: new Date().toISOString().split('T')[0]
       });
       setReceiptFile(null);
+      setPaymentProofFile(null);
     },
     onError: (error: any) => {
       console.error('Error submitting expense:', error);
@@ -136,6 +145,16 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
     setSubmitting(true);
     
     let receipt_image_url = null;
+    let payment_proof_url = null;
+    let voucher_number = null;
+
+    try {
+      const entityName = entities.find(e => e.id === formData.entity_id)?.name || '';
+      voucher_number = await api.generateExpenseVoucherNumber(entityName);
+    } catch (err) {
+      console.error('Failed to generate voucher number', err);
+    }
+
     if (receiptFile) {
       try {
         receipt_image_url = await api.uploadReceiptImage(receiptFile);
@@ -144,11 +163,21 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
       }
     }
 
+    if (paymentProofFile) {
+      try {
+        payment_proof_url = await api.uploadReceiptImage(paymentProofFile);
+      } catch (uploadErr: any) {
+        console.warn('Payment proof upload failed, submitting without proof:', uploadErr?.message);
+      }
+    }
+
     submitMutation.mutate({
       ...formData,
       batch_id: formData.batch_id || null,
       amount: Number(formData.amount),
-      receipt_image_url
+      receipt_image_url,
+      payment_proof_url,
+      voucher_number
     });
   };
 
@@ -288,11 +317,13 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
               <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
                 <tr>
                   <th className="px-6 py-4 font-medium">Date</th>
+                  <th className="px-6 py-4 font-medium">Voucher No.</th>
                   <th className="px-6 py-4 font-medium">Entity & Branch</th>
                   <th className="px-6 py-4 font-medium">Category</th>
                   <th className="px-6 py-4 font-medium">Description</th>
                   <th className="px-6 py-4 font-medium">Amount</th>
                   <th className="px-6 py-4 font-medium">Receipt</th>
+                  <th className="px-6 py-4 font-medium">Payment Proof</th>
                   <th className="px-6 py-4 font-medium">Status</th>
                   <th className="px-6 py-4 font-medium">Actions</th>
                 </tr>
@@ -305,7 +336,7 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
               >
                 {expenses.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-12 text-center">
+                    <td colSpan={10} className="p-12 text-center">
                       <div className="flex flex-col items-center justify-center">
                         <FileText className="h-16 w-16 text-muted-foreground opacity-50 mb-4" />
                         <p className="text-muted-foreground">{searchTerm ? 'No expenses found matching your search.' : 'No expenses recorded yet.'}</p>
@@ -316,6 +347,7 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
                   expenses.map((exp: any) => (
                     <motion.tr variants={itemVariants} key={exp.id} className="hover:bg-muted/30 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap text-muted-foreground">{new Date(exp.expense_date).toLocaleDateString()}</td>
+                      <td className="px-6 py-4 font-medium text-foreground">{exp.voucher_number || 'N/A'}</td>
                       <td className="px-6 py-4">
                         <div className="font-medium text-foreground">{exp.entities?.name || 'N/A'}</div>
                         <div className="text-xs text-muted-foreground mt-1">{exp.batches?.name || 'All Branches'}</div>
@@ -326,6 +358,15 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
                       <td className="px-6 py-4">
                         {exp.receipt_image_url ? (
                           <a href={exp.receipt_image_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-primary hover:underline font-medium">
+                            <ImageIcon size={14} /> View
+                          </a>
+                        ) : (
+                          <span className="text-muted-foreground italic text-xs">None</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        {exp.payment_proof_url ? (
+                          <a href={exp.payment_proof_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-primary hover:underline font-medium">
                             <ImageIcon size={14} /> View
                           </a>
                         ) : (
@@ -378,7 +419,18 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
                               Mark Paid
                             </Button>
                           )}
-                          {(userRole !== 'admin' && userRole !== 'manager') && (
+                          {(exp.status === 'APPROVED' || exp.status === 'PAID') && (
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              onClick={() => generatePaymentVoucher(exp)}
+                              className="text-muted-foreground hover:text-foreground"
+                              title="Print Voucher"
+                            >
+                              <Printer size={16} />
+                            </Button>
+                          )}
+                          {(userRole !== 'admin' && userRole !== 'manager') && exp.status !== 'APPROVED' && exp.status !== 'PAID' && (
                             <span className="text-muted-foreground">—</span>
                           )}
                         </div>
@@ -437,19 +489,6 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
               </select>
             </div>
             <div className="space-y-2">
-              <Label>Batch / Course (Optional)</Label>
-              <select
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
-                value={formData.batch_id}
-                onChange={e => setFormData({...formData, batch_id: e.target.value})}
-              >
-                <option value="">None</option>
-                {batches.map(batch => (
-                  <option key={batch.id} value={batch.id}>{batch.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
               <Label>Category</Label>
               <select
                 required
@@ -483,7 +522,8 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
                 onChange={e => setFormData({...formData, payment_mode: e.target.value})}
               >
                 <option value="CASH">Cash</option>
-                <option value="BANK">Bank</option>
+                <option value="BANK">Cheque</option>
+                <option value="UPI">Online Transfer</option>
               </select>
             </div>
             <div className="space-y-2">
@@ -512,15 +552,27 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
             />
           </div>
 
-          <div className="space-y-2">
-            <Label>Receipt Image (Optional)</Label>
-            <Input
-              type="file"
-              accept="image/*,.pdf"
-              onChange={handleFileChange}
-              className="cursor-pointer file:text-foreground"
-            />
-            <p className="text-xs text-muted-foreground">Upload a photo or PDF of the bill/receipt (Max 5MB).</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Receipt Image (Optional)</Label>
+              <Input
+                type="file"
+                accept="image/*,.pdf"
+                onChange={handleFileChange}
+                className="cursor-pointer file:text-foreground"
+              />
+              <p className="text-xs text-muted-foreground">Upload a photo or PDF of the bill/receipt (Max 5MB).</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Payment Proof (Optional)</Label>
+              <Input
+                type="file"
+                accept="image/*,.pdf"
+                onChange={handlePaymentProofChange}
+                className="cursor-pointer file:text-foreground"
+              />
+              <p className="text-xs text-muted-foreground">Upload payment voucher or screenshot.</p>
+            </div>
           </div>
 
           <div className="flex justify-end gap-3 pt-4 border-t border-border mt-6">

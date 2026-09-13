@@ -145,6 +145,10 @@ export const FeeCollection: React.FC = () => {
       setError('Please enter a valid amount.');
       return;
     }
+    if (paymentMode === 'BANK' && (!reference || reference.trim() === '')) {
+      setError('Please provide the transaction number for bank payments.');
+      return;
+    }
     const hasComponents = studentDetails.fee_structures?.[0]?.fee_components?.length > 0;
     if (hasComponents && totalAllocated !== parsedAmount) {
       setError(`Allocated amount (₹${totalAllocated}) must equal Received amount (₹${parsedAmount}).`);
@@ -507,13 +511,14 @@ export const FeeCollection: React.FC = () => {
                           </select>
                         </div>
                         <div className="space-y-2">
-                          <Label>Reference ID (Optional)</Label>
+                          <Label>{paymentMode === 'CASH' ? 'Reference ID (Optional)' : 'Transaction Number (Required)'}</Label>
                           <Input 
                             type="text" 
                             value={reference} 
                             onChange={e => setReference(e.target.value)} 
                             placeholder={paymentMode === 'CASH' ? 'N/A' : 'Transaction ID'}
                             disabled={paymentMode === 'CASH'}
+                            required={paymentMode === 'BANK'}
                           />
                         </div>
                       </div>

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { api } from '../api';
-import { FileText, Eye, Search, ChevronLeft, ChevronRight, Building, Calendar, CreditCard } from 'lucide-react';
+import { FileText, Eye, Search, ChevronLeft, ChevronRight, Building, Calendar, CreditCard, Trash2 } from 'lucide-react';
 import { Receipt } from '../components/Receipt';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '../contexts/AuthContext';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -29,7 +30,12 @@ export const TransactionsList: React.FC = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [paymentMode, setPaymentMode] = useState('');
+  const [statusTab, setStatusTab] = useState<'ACTIVE' | 'DELETED'>('ACTIVE');
   const limit = 10;
+  
+  const { role, user } = useAuth();
+  const isManager = role === 'manager' || role === 'admin';
+  const queryClient = useQueryClient();
   
   const [selectedReceipt, setSelectedReceipt] = useState<any>(null);
 
@@ -44,13 +50,27 @@ export const TransactionsList: React.FC = () => {
   });
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['transactions', page, limit, searchTerm, entityId, startDate, endDate, paymentMode],
-    queryFn: () => api.getTransactions(page, limit, searchTerm, entityId, startDate, endDate, paymentMode),
+    queryKey: ['transactions', page, limit, searchTerm, entityId, startDate, endDate, paymentMode, statusTab],
+    queryFn: () => api.getTransactions(page, limit, searchTerm, entityId, startDate, endDate, paymentMode, statusTab),
   });
 
   const transactions = data?.data || [];
   const totalPages = data?.totalPages || 0;
   const count = data?.count || 0;
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.deleteTransaction(id, user?.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['transactionStats'] });
+    },
+  });
+
+  const handleDelete = (id: string) => {
+    if (window.confirm("Are you sure you want to delete this transaction? It will be removed from reports but kept in the Deleted tab for auditing.")) {
+      deleteMutation.mutate(id);
+    }
+  };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,6 +119,27 @@ export const TransactionsList: React.FC = () => {
             ))}
           </motion.div>
         )}
+      </div>
+
+      <div className="flex border-b border-border mb-6">
+        <button
+          className={`px-6 py-3 font-medium text-sm transition-colors relative ${statusTab === 'ACTIVE' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+          onClick={() => { setStatusTab('ACTIVE'); setPage(1); }}
+        >
+          Active Transactions
+          {statusTab === 'ACTIVE' && (
+            <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
+          )}
+        </button>
+        <button
+          className={`px-6 py-3 font-medium text-sm transition-colors relative ${statusTab === 'DELETED' ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'}`}
+          onClick={() => { setStatusTab('DELETED'); setPage(1); }}
+        >
+          Deleted Transactions
+          {statusTab === 'DELETED' && (
+            <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-destructive" />
+          )}
+        </button>
       </div>
 
       <Card className="mb-6">
@@ -218,14 +259,27 @@ export const TransactionsList: React.FC = () => {
                           ₹{Number(tx.amount).toLocaleString()}
                         </td>
                         <td className="px-6 py-4">
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="gap-2"
-                            onClick={() => setSelectedReceipt(tx)}
-                          >
-                            <Eye size={14} /> View
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="gap-2"
+                              onClick={() => setSelectedReceipt(tx)}
+                            >
+                              <Eye size={14} /> View
+                            </Button>
+                            {statusTab === 'ACTIVE' && isManager && (
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => handleDelete(tx.id)}
+                                disabled={deleteMutation.isPending}
+                              >
+                                <Trash2 size={14} />
+                              </Button>
+                            )}
+                          </div>
                         </td>
                       </motion.tr>
                     ))}

@@ -14,6 +14,7 @@ import SettingsPage from './pages/Settings';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Login } from './pages/Login';
 import Reports from './pages/Reports';
+import { ReceiptTemplates } from './pages/ReceiptTemplates';
 
 import { useTheme } from './contexts/ThemeContext';
 import { Button } from './components/ui/button';
@@ -70,6 +71,7 @@ function Sidebar({ userRole }: { userRole: 'admin' | 'manager' | 'accountant' })
             <>
               <NavItem to="/organization" icon={Building} label="Organization" />
               <NavItem to="/settings" icon={Settings} label="Settings" />
+              <NavItem to="/receipt-preview" icon={FileText} label="Receipt Preview" />
             </>
           )}
         </nav>
@@ -148,6 +150,10 @@ function AuthenticatedApp() {
                 <Route 
                   path="/settings" 
                   element={isManagement ? <SettingsPage /> : <Navigate to="/" replace />} 
+                />
+                <Route 
+                  path="/receipt-preview" 
+                  element={isManagement ? <ReceiptTemplates /> : <Navigate to="/" replace />} 
                 />
               </Routes>
             </motion.div>

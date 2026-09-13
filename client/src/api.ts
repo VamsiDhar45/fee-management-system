@@ -36,6 +36,18 @@ export const api = {
     return data[0] as Batch;
   },
 
+  updateEntity: async (id: string, name: string, description: string, has_gst: boolean = false) => {
+    const { data, error } = await supabase.from('entities').update({ name, description, has_gst }).eq('id', id).select();
+    if (error) throw error;
+    return data[0] as Entity;
+  },
+
+  updateBatch: async (id: string, name: string) => {
+    const { data, error } = await supabase.from('batches').update({ name }).eq('id', id).select();
+    if (error) throw error;
+    return data[0] as Batch;
+  },
+
   getStudents: async (
     page: number = 1, 
     limit: number = 10, 
@@ -164,6 +176,12 @@ export const api = {
       .eq('id', studentId)
       .single();
     if (error) throw error;
+    
+    // Filter out deleted incomes
+    if (data && data.incomes) {
+      data.incomes = data.incomes.filter((inc: any) => inc.status === 'ACTIVE');
+    }
+    
     return data;
   },
 
@@ -229,7 +247,7 @@ export const api = {
         payment_mode: paymentData.payment_mode,
         reference_number: paymentData.reference_number || null,
         receipt_number: receipt_number
-      }).select().single();
+      }).select('*, entities(name, description, has_gst)').single();
       
       if (incomeError) throw incomeError;
 
@@ -248,7 +266,7 @@ export const api = {
     }
 
     // 3. Update Installment Status
-    const { data: allIncomes } = await supabase.from('incomes').select('amount').eq('installment_id', paymentData.installment_id);
+    const { data: allIncomes } = await supabase.from('incomes').select('amount').eq('installment_id', paymentData.installment_id).eq('status', 'ACTIVE');
     const totalPaid = allIncomes?.reduce((acc, curr) => acc + Number(curr.amount), 0) || 0;
     
     const { data: inst } = await supabase.from('fee_installments').select('amount_due').eq('id', paymentData.installment_id).single();
@@ -363,7 +381,7 @@ export const api = {
             batches (name)
           )
         ),
-        incomes (amount)
+        incomes (amount, status)
       `)
       .lt('due_date', today)
       .neq('status', 'PAID')
@@ -378,7 +396,7 @@ export const api = {
     if (error) throw error;
     
     const defaulters = overdueInstallments.map(inst => {
-      const paid = inst.incomes?.reduce((sum: number, inc: any) => sum + Number(inc.amount), 0) || 0;
+      const paid = inst.incomes?.filter((inc: any) => inc.status === 'ACTIVE').reduce((sum: number, inc: any) => sum + Number(inc.amount), 0) || 0;
       const amountOwed = Number(inst.amount_due) - paid;
       return {
         ...inst,
@@ -396,7 +414,8 @@ export const api = {
     entityId?: string,
     startDate?: string,
     endDate?: string,
-    paymentMode?: string
+    paymentMode?: string,
+    status: string = 'ACTIVE'
   ) => {
     const start = (page - 1) * limit;
     const end = start + limit - 1;
@@ -415,6 +434,10 @@ export const api = {
 
     if (entityId) {
       query = query.eq('entity_id', entityId);
+    }
+    
+    if (status) {
+      query = query.eq('status', status);
     }
     
     if (startDate) {
@@ -473,6 +496,7 @@ export const api = {
           entities (name, has_gst)
         `)
         .order('created_at', { ascending: false })
+        .eq('status', 'ACTIVE')
         .range(start, end);
 
       if (entityId && entityId !== 'all') {
@@ -502,6 +526,44 @@ export const api = {
     }
     
     return allData;
+  },
+
+  deleteTransaction: async (id: string, userId?: string) => {
+    // 1. Mark as deleted
+    const { data, error } = await supabase
+      .from('incomes')
+      .update({
+        status: 'DELETED',
+        deleted_at: new Date().toISOString(),
+        deleted_by: userId || null
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // 2. Recalculate installment status if it belongs to an installment
+    if (data.installment_id) {
+      const { data: allIncomes } = await supabase
+        .from('incomes')
+        .select('amount')
+        .eq('installment_id', data.installment_id)
+        .eq('status', 'ACTIVE');
+        
+      const totalPaid = allIncomes?.reduce((acc, curr) => acc + Number(curr.amount), 0) || 0;
+      const { data: inst } = await supabase.from('fee_installments').select('amount_due').eq('id', data.installment_id).single();
+      
+      if (inst) {
+        let status = 'PENDING';
+        if (totalPaid >= Number(inst.amount_due)) status = 'PAID';
+        else if (totalPaid > 0) status = 'PARTIAL';
+        
+        await supabase.from('fee_installments').update({ status }).eq('id', data.installment_id);
+      }
+    }
+
+    return data;
   },
 
   getTransactionStats: async (
@@ -537,7 +599,8 @@ export const api = {
   getComponentRevenueReport: async (startDate?: string, endDate?: string, entityId?: string, paymentMode?: string) => {
     let query = supabase
       .from('income_allocations')
-      .select('amount, fee_components!inner(category_name), incomes!inner(created_at, entity_id, payment_mode)');
+      .select('amount, fee_components!inner(category_name), incomes!inner(created_at, entity_id, payment_mode, status)')
+      .eq('incomes.status', 'ACTIVE');
 
     if (startDate) query = query.gte('incomes.created_at', startDate);
     if (endDate) query = query.lte('incomes.created_at', endDate);
@@ -607,7 +670,7 @@ export const api = {
         enrollment_date,
         batches (name),
         fee_structures (total_amount),
-        incomes (amount, payment_mode)
+        incomes (amount, payment_mode, status)
       `)
       .order('name');
       
@@ -639,6 +702,7 @@ export const api = {
       let totalPaid = 0;
       
       (student.incomes || []).forEach((income: any) => {
+        if (income.status !== 'ACTIVE') return;
         const amt = Number(income.amount) || 0;
         totalPaid += amt;
         if (income.payment_mode === 'CASH') paidCash += amt;
@@ -684,7 +748,7 @@ export const api = {
               batches (name)
             )
           ),
-          incomes (amount)
+          incomes (amount, status)
         `)
         .lt('due_date', today)
         .neq('status', 'PAID')
@@ -703,7 +767,7 @@ export const api = {
       if (!data || data.length === 0) break;
       
       const processed = data.map(inst => {
-        const paid = inst.incomes?.reduce((sum: number, inc: any) => sum + Number(inc.amount), 0) || 0;
+        const paid = inst.incomes?.filter((inc: any) => inc.status === 'ACTIVE').reduce((sum: number, inc: any) => sum + Number(inc.amount), 0) || 0;
         const amountOwed = Number(inst.amount_due) - paid;
         return {
           ...inst,
@@ -725,6 +789,23 @@ export const api = {
     const { data, error } = await supabase.from('expense_categories').select('*').order('name');
     if (error) throw error;
     return data;
+  },
+
+  createExpenseCategory: async (name: string, description: string = '') => {
+    const { data, error } = await supabase.from('expense_categories').insert([{ name, description }]).select();
+    if (error) throw error;
+    return data[0];
+  },
+
+  updateExpenseCategory: async (id: string, name: string, description: string = '') => {
+    const { data, error } = await supabase.from('expense_categories').update({ name, description }).eq('id', id).select();
+    if (error) throw error;
+    return data[0];
+  },
+
+  deleteExpenseCategory: async (id: string) => {
+    const { error } = await supabase.from('expense_categories').delete().eq('id', id);
+    if (error) throw error;
   },
 
   getEntities: async () => {
@@ -753,7 +834,7 @@ export const api = {
       .from('expenses')
       .select(`
         *,
-        entities (name),
+        entities (name, description),
         batches (name),
         expense_categories (name),
         submitted_by_profile:profiles!expenses_submitted_by_fkey (name),
@@ -803,6 +884,35 @@ export const api = {
     }
     
     return data;
+  },
+
+  generateExpenseVoucherNumber: async (entityName: string) => {
+    const initials = entityName ? entityName.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').substring(0, 3).toUpperCase() : 'ORG';
+    const year = new Date().getFullYear();
+    const prefix = `${initials}-VCH-${year}`;
+
+    const { data, error } = await supabase
+      .from('expenses')
+      .select('voucher_number')
+      .ilike('voucher_number', `${prefix}-%`)
+      .order('voucher_number', { ascending: false })
+      .limit(1);
+    
+    if (error) throw error;
+    
+    if (data && data.length > 0 && data[0].voucher_number) {
+      const lastNumber = data[0].voucher_number;
+      const parts = lastNumber.split('-');
+      // Expected format: ABC-VCH-YYYY-XXXX (4 parts)
+      if (parts.length === 4) {
+        const seq = parseInt(parts[3], 10);
+        if (!isNaN(seq)) {
+          return `${prefix}-${String(seq + 1).padStart(4, '0')}`;
+        }
+      }
+    }
+    
+    return `${prefix}-0001`;
   },
 
   uploadReceiptImage: async (file: File) => {
