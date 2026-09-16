@@ -12,7 +12,8 @@ export default function Settings() {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    password: ''
+    password: '',
+    role: 'accountant'
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -24,12 +25,12 @@ export default function Settings() {
 
     setLoading(true);
     try {
-      await api.createAccountant(formData);
-      toast.success('Accountant created successfully!');
-      setFormData({ name: '', email: '', password: '' });
+      await api.createStaffUser(formData);
+      toast.success(`${formData.role === 'manager' ? 'Manager' : 'Accountant'} created successfully!`);
+      setFormData({ name: '', email: '', password: '', role: 'accountant' });
     } catch (err: any) {
       console.error(err);
-      toast.error(err.message || 'Failed to create accountant');
+      toast.error(err.message || `Failed to create ${formData.role}`);
     } finally {
       setLoading(false);
     }
@@ -47,9 +48,9 @@ export default function Settings() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Shield className="text-primary h-5 w-5" /> 
-              Create Accountant
+              Create Staff Account
             </CardTitle>
-            <CardDescription>Add a new accountant account to the system.</CardDescription>
+            <CardDescription>Add a new Manager or Accountant account to the system.</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -87,13 +88,26 @@ export default function Settings() {
                 />
               </div>
 
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <select 
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  value={formData.role}
+                  onChange={e => setFormData({ ...formData, role: e.target.value })}
+                  required
+                >
+                  <option value="accountant">Accountant</option>
+                  <option value="manager">Manager</option>
+                </select>
+              </div>
+
               <Button 
                 type="submit" 
                 className="w-full gap-2 mt-2" 
                 disabled={loading}
               >
                 <UserPlus size={18} />
-                {loading ? 'Creating...' : 'Create Accountant'}
+                {loading ? 'Creating...' : 'Create Account'}
               </Button>
             </form>
           </CardContent>

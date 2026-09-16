@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Check, X, CreditCard, Clock, Image as ImageIcon, Search, ChevronLeft, ChevronRight, FileText, Printer } from 'lucide-react';
+import { Plus, Check, X, CreditCard, Clock, Image as ImageIcon, Search, ChevronLeft, ChevronRight, FileText, Printer, Trash2, User } from 'lucide-react';
 import { api } from '../api';
 import { Modal } from '../components/Modal';
+import { useAuth } from '../contexts/AuthContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -23,6 +24,7 @@ const itemVariants = {
 };
 
 export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' | 'accountant' }) {
+  const { user } = useAuth();
   const [page, setPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchInput, setSearchInput] = useState('');
@@ -40,6 +42,7 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
   const [categories, setCategories] = useState<any[]>([]);
   const [entities, setEntities] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedExpenses, setSelectedExpenses] = useState<string[]>([]);
   
 
 
@@ -110,6 +113,7 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
     mutationFn: (data: any) => api.submitExpense(data),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      setSelectedExpenses([]);
       
       const cat = categories.find(c => c.id === variables.category_id);
       const catName = cat ? cat.name : 'Unknown';
@@ -179,17 +183,71 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
   };
 
   const statusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string, status: string }) => api.updateExpenseStatus(id, status),
+    mutationFn: ({ id, status, approved_by }: { id: string, status: string, approved_by?: string }) => api.updateExpenseStatus(id, status, approved_by),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      setSelectedExpenses([]);
     },
     onError: (error) => {
       console.error('Error updating status:', error);
     }
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.deleteExpense(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['expenseStats'] });
+      setSelectedExpenses([]);
+    },
+    onError: (error) => {
+      console.error('Error deleting expense:', error);
+      alert('Failed to delete expense.');
+    }
+  });
+
   const handleUpdateStatus = (id: string, status: string) => {
-    statusMutation.mutate({ id, status });
+    statusMutation.mutate({ id, status, approved_by: status === 'APPROVED' ? user?.id : undefined });
+  };
+  
+  const handleDelete = (id: string) => {
+    if (confirm('Are you sure you want to delete this expense?')) {
+      deleteMutation.mutate(id);
+    }
+  };
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => api.deleteMultipleExpenses(ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['expenseStats'] });
+      setSelectedExpenses([]);
+    },
+    onError: (error) => {
+      console.error('Error bulk deleting expenses:', error);
+      alert('Failed to delete selected expenses.');
+    }
+  });
+
+  const handleBulkDelete = () => {
+    if (selectedExpenses.length === 0) return;
+    if (confirm(`Are you sure you want to delete ${selectedExpenses.length} expenses?`)) {
+      bulkDeleteMutation.mutate(selectedExpenses);
+    }
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedExpenses.length === expenses.length) {
+      setSelectedExpenses([]);
+    } else {
+      setSelectedExpenses(expenses.map((e: any) => e.id));
+    }
+  };
+
+  const toggleSelectRow = (id: string) => {
+    setSelectedExpenses(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
   };
 
   if (loading && expenses.length === 0) return <div className="p-12 text-center text-muted-foreground">Loading expenses...</div>;
@@ -304,6 +362,21 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
               </div>
             </div>
           </form>
+          
+          {(userRole === 'admin' || userRole === 'manager') && selectedExpenses.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">{selectedExpenses.length} selected</span>
+              <Button 
+                variant="destructive" 
+                size="sm" 
+                className="gap-2"
+                onClick={handleBulkDelete}
+                disabled={bulkDeleteMutation.isPending}
+              >
+                <Trash2 size={16} /> Delete Selected
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -313,6 +386,16 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
             <table className="w-full text-sm text-left">
               <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
                 <tr>
+                  {(userRole === 'admin' || userRole === 'manager') && (
+                    <th className="px-6 py-4">
+                      <input 
+                        type="checkbox" 
+                        className="rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                        checked={expenses.length > 0 && selectedExpenses.length === expenses.length}
+                        onChange={toggleSelectAll}
+                      />
+                    </th>
+                  )}
                   <th className="px-6 py-4 font-medium">Date</th>
                   <th className="px-6 py-4 font-medium">Voucher No.</th>
                   <th className="px-6 py-4 font-medium">Entity & Branch</th>
@@ -333,16 +416,36 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
               >
                 {expenses.length === 0 ? (
                   <tr>
+                  {(userRole === 'admin' || userRole === 'manager') && (
+                    <td colSpan={11} className="p-12 text-center">
+                      <div className="flex flex-col items-center justify-center">
+                        <FileText className="h-16 w-16 text-muted-foreground opacity-50 mb-4" />
+                        <p className="text-muted-foreground">{searchTerm ? 'No expenses found matching your search.' : 'No expenses recorded yet.'}</p>
+                      </div>
+                    </td>
+                  )}
+                  {(userRole !== 'admin' && userRole !== 'manager') && (
                     <td colSpan={10} className="p-12 text-center">
                       <div className="flex flex-col items-center justify-center">
                         <FileText className="h-16 w-16 text-muted-foreground opacity-50 mb-4" />
                         <p className="text-muted-foreground">{searchTerm ? 'No expenses found matching your search.' : 'No expenses recorded yet.'}</p>
                       </div>
                     </td>
+                  )}
                   </tr>
                 ) : (
                   expenses.map((exp: any) => (
                     <motion.tr variants={itemVariants} key={exp.id} className="hover:bg-muted/30 transition-colors">
+                      {(userRole === 'admin' || userRole === 'manager') && (
+                        <td className="px-6 py-4">
+                          <input 
+                            type="checkbox" 
+                            className="rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                            checked={selectedExpenses.includes(exp.id)}
+                            onChange={() => toggleSelectRow(exp.id)}
+                          />
+                        </td>
+                      )}
                       <td className="px-6 py-4 whitespace-nowrap text-muted-foreground">{new Date(exp.expense_date).toLocaleDateString()}</td>
                       <td className="px-6 py-4 font-medium text-foreground">{exp.voucher_number || 'N/A'}</td>
                       <td className="px-6 py-4">
@@ -371,13 +474,21 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
                         )}
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
-                          exp.status === 'APPROVED' ? 'bg-green-500/10 text-green-600 dark:text-green-500' : 
-                          exp.status === 'PAID' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-500' : 
-                          exp.status === 'REJECTED' ? 'bg-destructive/10 text-destructive' : 'bg-amber-500/10 text-amber-600 dark:text-amber-500'
-                        }`}>
-                          {exp.status}
-                        </span>
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
+                            exp.status === 'APPROVED' ? 'bg-green-500/10 text-green-600 dark:text-green-500' : 
+                            exp.status === 'PAID' ? 'bg-blue-500/10 text-blue-600 dark:text-blue-500' : 
+                            exp.status === 'REJECTED' ? 'bg-destructive/10 text-destructive' : 'bg-amber-500/10 text-amber-600 dark:text-amber-500'
+                          }`}>
+                            {exp.status}
+                          </span>
+                          {(exp.status === 'APPROVED' || exp.status === 'PAID') && exp.approved_by_profile && (
+                            <span className="text-[10px] text-muted-foreground flex items-center gap-1 mt-1 font-medium bg-muted px-1.5 py-0.5 rounded" title="Approved By">
+                              <User size={10} className="opacity-70" />
+                              {exp.approved_by_profile.name}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex gap-2">
@@ -429,6 +540,18 @@ export default function Expenses({ userRole }: { userRole: 'admin' | 'manager' |
                           )}
                           {(userRole !== 'admin' && userRole !== 'manager') && exp.status !== 'APPROVED' && exp.status !== 'PAID' && (
                             <span className="text-muted-foreground">—</span>
+                          )}
+                          {(userRole === 'admin' || userRole === 'manager') && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDelete(exp.id)}
+                              disabled={deleteMutation.isPending}
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10 ml-auto"
+                              title="Delete Expense"
+                            >
+                              <Trash2 size={16} />
+                            </Button>
                           )}
                         </div>
                       </td>

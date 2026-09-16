@@ -817,6 +817,18 @@ export const api = {
     return Array.from(seen.values()) as Entity[];
   },
 
+  deleteExpense: async (id: string) => {
+    const { error } = await supabase.from('expenses').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  deleteMultipleExpenses: async (ids: string[]) => {
+    if (!ids || ids.length === 0) return;
+    const { error } = await supabase.from('expenses').delete().in('id', ids);
+    if (error) throw error;
+  },
+
+
   getExpenses: async (
     page: number = 1,
     limit: number = 10,
@@ -987,15 +999,16 @@ export const api = {
     return data;
   },
 
-  createAccountant: async (userData: any) => {
-    const response = await fetch('http://localhost:5000/api/users', {
+  createStaffUser: async (userData: {name: string, email: string, password: string, role: string}) => {
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    const response = await fetch(`${apiUrl}/api/users`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...userData, role: 'accountant' })
+      body: JSON.stringify(userData)
     });
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.error || 'Failed to create accountant');
+      throw new Error(errData.error || `Failed to create ${userData.role}`);
     }
     return response.json();
   },
@@ -1111,5 +1124,12 @@ export const api = {
     }
 
     return purchase;
+  },
+
+  deletePurchase: async (id: string) => {
+    // Delete items first in case there is no cascade delete
+    await supabase.from('hostel_purchase_items').delete().eq('purchase_id', id);
+    const { error } = await supabase.from('hostel_purchases').delete().eq('id', id);
+    if (error) throw error;
   }
 };

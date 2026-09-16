@@ -76,6 +76,23 @@ export default function PurchasesList() {
     }
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.deletePurchase(id),
+    onSuccess: () => {
+      toast.success('Purchase deleted successfully');
+      queryClient.invalidateQueries({ queryKey: ['hostel_purchases'] });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Failed to delete purchase');
+    }
+  });
+
+  const handleDelete = (id: string) => {
+    if (confirm('Are you sure you want to delete this entire purchase? This will remove all items associated with this purchase.')) {
+      deleteMutation.mutate(id);
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       vendor_id: '',
@@ -366,12 +383,13 @@ export default function PurchasesList() {
               <th className="px-6 py-4 font-medium">Quantity</th>
               <th className="px-6 py-4 font-medium">Price/Unit</th>
               <th className="px-6 py-4 font-medium">Total Price</th>
+              <th className="px-6 py-4 font-medium text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {flattenedPurchaseItems.length === 0 ? (
               <tr>
-                <td colSpan={6} className="p-12 text-center text-muted-foreground">
+                <td colSpan={7} className="p-12 text-center text-muted-foreground">
                   No purchases found.
                 </td>
               </tr>
@@ -389,6 +407,18 @@ export default function PurchasesList() {
                   <td className="px-6 py-4">{item.quantity} {item.unit}</td>
                   <td className="px-6 py-4">₹{Number(item.price_per_unit).toLocaleString()}</td>
                   <td className="px-6 py-4 font-bold">₹{Number(item.total_price).toLocaleString()}</td>
+                  <td className="px-6 py-4 text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDelete(item.purchase_id)}
+                      disabled={deleteMutation.isPending}
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                      title="Delete Entire Purchase"
+                    >
+                      <Trash2 size={16} />
+                    </Button>
+                  </td>
                 </tr>
               ))
             )}
