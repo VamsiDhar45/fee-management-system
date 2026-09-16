@@ -70,7 +70,7 @@ function Sidebar({ userRole }: { userRole: 'admin' | 'manager' | 'accountant' })
           {userRole !== 'accountant' && <NavItem to="/reports" icon={BarChart3} label="Reports" />}
           {(userRole === 'admin' || userRole === 'manager') && (
             <>
-              <NavItem to="/hostel" icon={Store} label="Hostel Management" />
+              <NavItem to="/hostel" icon={Store} label="Kitchen Management" />
               <NavItem to="/organization" icon={Building} label="Organization" />
               <NavItem to="/settings" icon={Settings} label="Settings" />
               <NavItem to="/receipt-preview" icon={FileText} label="Receipt Preview" />
