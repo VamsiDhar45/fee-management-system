@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import { Store, ShoppingBag, Package, Home } from 'lucide-react';
+import { Store, ShoppingBag, Package } from 'lucide-react';
 import VendorsList from '../components/hostel/VendorsList';
 import ItemsList from '../components/hostel/ItemsList';
 import PurchasesList from '../components/hostel/PurchasesList';
-import HostelsList from '../components/hostel/HostelsList';
 
 export function HostelManagement() {
-  const [activeTab, setActiveTab] = useState<'purchases' | 'vendors' | 'items' | 'hostels'>('purchases');
+  const [activeTab, setActiveTab] = useState<'purchases' | 'vendors' | 'items'>('purchases');
 
   return (
     <div className="space-y-6">
@@ -50,24 +49,12 @@ export function HostelManagement() {
             <Package size={18} />
             Items
           </button>
-          <button
-            onClick={() => setActiveTab('hostels')}
-            className={`flex items-center gap-2 px-6 py-4 font-medium transition-colors ${
-              activeTab === 'hostels' 
-                ? 'text-primary border-b-2 border-primary bg-primary/5' 
-                : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
-            }`}
-          >
-            <Home size={18} />
-            Hostels
-          </button>
         </div>
 
         <div className="p-6">
           {activeTab === 'purchases' && <PurchasesList />}
           {activeTab === 'vendors' && <VendorsList />}
           {activeTab === 'items' && <ItemsList />}
-          {activeTab === 'hostels' && <HostelsList />}
         </div>
       </div>
     </div>

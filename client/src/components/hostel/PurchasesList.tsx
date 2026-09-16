@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Calendar, Home, Trash2, Filter, X, Download, FileText, IndianRupee, ShoppingCart, Store } from 'lucide-react';
+import { Plus, Calendar, Trash2, Filter, X, Download, FileText, IndianRupee, ShoppingCart, Store } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { api } from '../../api';
@@ -12,7 +12,6 @@ import toast from 'react-hot-toast';
 
 export default function PurchasesList() {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [hostels, setHostels] = useState<any[]>([]);
   const [vendors, setVendors] = useState<any[]>([]);
   const [items, setItems] = useState<any[]>([]);
 
@@ -25,7 +24,6 @@ export default function PurchasesList() {
   const queryClient = useQueryClient();
 
   const [formData, setFormData] = useState({
-    hostel_id: '',
     vendor_id: '',
     purchase_date: new Date().toISOString().split('T')[0],
     notes: ''
@@ -35,11 +33,9 @@ export default function PurchasesList() {
 
   useEffect(() => {
     Promise.all([
-      api.getHostels(),
       api.getVendors(),
       api.getItems()
-    ]).then(([hostelData, venData, itmData]) => {
-      setHostels(hostelData || []);
+    ]).then(([venData, itmData]) => {
       setVendors(venData || []);
       setItems(itmData || []);
     }).catch(console.error);
@@ -82,7 +78,6 @@ export default function PurchasesList() {
 
   const resetForm = () => {
     setFormData({
-      hostel_id: '',
       vendor_id: '',
       purchase_date: new Date().toISOString().split('T')[0],
       notes: ''
@@ -126,8 +121,8 @@ export default function PurchasesList() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.hostel_id || !formData.vendor_id) {
-      toast.error('Please select a hostel and vendor');
+    if (!formData.vendor_id) {
+      toast.error('Please select a vendor');
       return;
     }
     if (purchaseItems.length === 0) {
@@ -151,26 +146,35 @@ export default function PurchasesList() {
     mutation.mutate({ purchase: purchaseData, items: purchaseItems });
   };
 
-  const filteredItemsList = formData.vendor_id ? items.filter(i => i.vendor_id === formData.vendor_id) : items;
+  const filteredItemsList = items;
 
   // Summary values from filtered purchases
   const totalAmount = filteredPurchases.reduce((sum, p) => sum + Number(p.total_amount || 0), 0);
   const uniqueVendors = new Set(filteredPurchases.map(p => p.vendor_id)).size;
   const totalItemLines = filteredPurchases.reduce((sum, p) => sum + (p.items?.length || 0), 0);
 
+  const flattenedPurchaseItems = filteredPurchases.flatMap(p => 
+    (p.items || []).map((item: any) => ({
+      ...item,
+      purchase_date: p.purchase_date,
+      vendor_name: p.vendor?.name,
+      purchase_id: p.id
+    }))
+  );
+
   // CSV Export
   const exportCSV = () => {
     const rows = [
-      ['Date', 'Hostel', 'Vendor', 'Items', 'Total Amount (INR)']
+      ['Date', 'Vendor', 'Item', 'Quantity', 'Price/Unit (INR)', 'Total Price (INR)']
     ];
-    filteredPurchases.forEach(p => {
-      const itemStr = p.items?.map((i: any) => `${i.item?.name} (${i.quantity} ${i.unit})`).join('; ') || '';
+    flattenedPurchaseItems.forEach(item => {
       rows.push([
-        new Date(p.purchase_date).toLocaleDateString('en-IN'),
-        p.hostel?.name || '',
-        p.vendor?.name || '',
-        itemStr,
-        Number(p.total_amount).toFixed(2)
+        new Date(item.purchase_date).toLocaleDateString('en-IN'),
+        item.vendor_name || '',
+        item.item?.name || '',
+        `${item.quantity} ${item.unit}`,
+        Number(item.price_per_unit).toFixed(2),
+        Number(item.total_price).toFixed(2)
       ]);
     });
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
@@ -196,28 +200,29 @@ export default function PurchasesList() {
     }
     doc.setTextColor(0);
 
-    // Summary row
     doc.setFontSize(11);
     doc.text(`Total: \u20B9${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}  |  Purchases: ${filteredPurchases.length}  |  Vendors: ${uniqueVendors}`, 14, 36);
 
     autoTable(doc, {
       startY: 42,
-      head: [['Date', 'Hostel', 'Vendor', 'Items', 'Amount (\u20B9)']],
-      body: filteredPurchases.map(p => [
-        new Date(p.purchase_date).toLocaleDateString('en-IN'),
-        p.hostel?.name || '',
-        p.vendor?.name || '',
-        p.items?.map((i: any) => `${i.item?.name} (${i.quantity} ${i.unit})`).join(', ') || '',
-        Number(p.total_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })
+      head: [['Date', 'Vendor', 'Item', 'Qty', 'Price', 'Total (\u20B9)']],
+      body: flattenedPurchaseItems.map(item => [
+        new Date(item.purchase_date).toLocaleDateString('en-IN'),
+        item.vendor_name || '',
+        item.item?.name || '',
+        `${item.quantity} ${item.unit}`,
+        Number(item.price_per_unit).toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+        Number(item.total_price).toLocaleString('en-IN', { minimumFractionDigits: 2 })
       ]),
-      foot: [['', '', '', 'Grand Total', `\u20B9${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`]],
+      foot: [['', '', '', '', 'Grand Total', `\u20B9${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`]],
       styles: { fontSize: 9 },
       headStyles: { fillColor: [79, 70, 229], textColor: 255 },
       footStyles: { fontStyle: 'bold', fillColor: [230, 230, 255], textColor: [30, 30, 30] },
-      columnStyles: { 3: { cellWidth: 60 }, 4: { halign: 'right' } }
+      columnStyles: { 3: { cellWidth: 20 }, 4: { halign: 'right' }, 5: { halign: 'right' } }
     });
     doc.save(`hostel-purchases-${new Date().toISOString().split('T')[0]}.pdf`);
   };
+
 
   if (isLoading) return <div className="p-8 text-center text-muted-foreground">Loading purchases...</div>;
 
@@ -356,50 +361,34 @@ export default function PurchasesList() {
           <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
             <tr>
               <th className="px-6 py-4 font-medium">Date</th>
-              <th className="px-6 py-4 font-medium">Hostel</th>
               <th className="px-6 py-4 font-medium">Vendor</th>
-              <th className="px-6 py-4 font-medium">Items</th>
-              <th className="px-6 py-4 font-medium">Total Amount</th>
+              <th className="px-6 py-4 font-medium">Item</th>
+              <th className="px-6 py-4 font-medium">Quantity</th>
+              <th className="px-6 py-4 font-medium">Price/Unit</th>
+              <th className="px-6 py-4 font-medium">Total Price</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {filteredPurchases.length === 0 ? (
+            {flattenedPurchaseItems.length === 0 ? (
               <tr>
-                <td colSpan={5} className="p-12 text-center text-muted-foreground">
+                <td colSpan={6} className="p-12 text-center text-muted-foreground">
                   No purchases found.
                 </td>
               </tr>
             ) : (
-              filteredPurchases.map(purchase => (
-                <tr key={purchase.id} className="hover:bg-muted/30 transition-colors">
+              flattenedPurchaseItems.map((item, index) => (
+                <tr key={`${item.purchase_id}-${item.item_id}-${index}`} className="hover:bg-muted/30 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Calendar size={14} />
-                      {new Date(purchase.purchase_date).toLocaleDateString()}
+                      {new Date(item.purchase_date).toLocaleDateString()}
                     </div>
                   </td>
-                  <td className="px-6 py-4 font-medium">
-                    <div className="flex items-center gap-2">
-                      <Home size={14} className="text-primary" />
-                      {purchase.hostel?.name || 'Unknown'}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">{purchase.vendor?.name || 'Unknown Vendor'}</td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-wrap gap-1">
-                      {purchase.items?.slice(0, 3).map((item: any, i: number) => (
-                        <span key={i} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-secondary text-secondary-foreground">
-                          {item.item?.name} ({item.quantity} {item.unit})
-                        </span>
-                      ))}
-                      {purchase.items?.length > 3 && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground">
-                          +{purchase.items.length - 3} more
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 font-bold">₹{Number(purchase.total_amount).toLocaleString()}</td>
+                  <td className="px-6 py-4">{item.vendor_name || 'Unknown Vendor'}</td>
+                  <td className="px-6 py-4">{item.item?.name || 'Unknown Item'}</td>
+                  <td className="px-6 py-4">{item.quantity} {item.unit}</td>
+                  <td className="px-6 py-4">₹{Number(item.price_per_unit).toLocaleString()}</td>
+                  <td className="px-6 py-4 font-bold">₹{Number(item.total_price).toLocaleString()}</td>
                 </tr>
               ))
             )}
@@ -409,39 +398,19 @@ export default function PurchasesList() {
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Record New Purchase">
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Hostel</Label>
-              <select
-                required
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                value={formData.hostel_id}
-                onChange={e => {
-                  setFormData({...formData, hostel_id: e.target.value});
-                  setPurchaseItems([]);
-                }}
-              >
-                <option value="">Select Hostel</option>
-                {hostels.map(hostel => (
-                  <option key={hostel.id} value={hostel.id}>{hostel.name}</option>
-                ))}
-              </select>
-            </div>
-            
-            <div className="space-y-2">
-              <Label>Vendor</Label>
-              <select
-                required
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
-                value={formData.vendor_id}
-                onChange={e => setFormData({...formData, vendor_id: e.target.value})}
-              >
-                <option value="">Select Vendor</option>
-                {vendors.map(vendor => (
-                  <option key={vendor.id} value={vendor.id}>{vendor.name}</option>
-                ))}
-              </select>
-            </div>
+          <div className="space-y-2">
+            <Label>Vendor</Label>
+            <select
+              required
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              value={formData.vendor_id}
+              onChange={e => setFormData({...formData, vendor_id: e.target.value})}
+            >
+              <option value="">Select Vendor</option>
+              {vendors.map(vendor => (
+                <option key={vendor.id} value={vendor.id}>{vendor.name}</option>
+              ))}
+            </select>
           </div>
 
           <div className="space-y-2">
@@ -457,7 +426,7 @@ export default function PurchasesList() {
           <div className="border border-border rounded-lg p-4 bg-muted/10 space-y-4">
             <div className="flex justify-between items-center">
               <Label className="text-base">Items</Label>
-              <Button type="button" variant="outline" size="sm" onClick={handleAddItem} disabled={!formData.hostel_id} className="gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={handleAddItem} disabled={!formData.vendor_id} className="gap-2">
                 <Plus size={14} /> Add Item
               </Button>
             </div>

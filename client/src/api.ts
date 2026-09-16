@@ -1047,17 +1047,13 @@ export const api = {
     if (error) throw error;
   },
 
-  getItems: async (vendorId?: string) => {
-    let query = supabase.from('hostel_items').select('*, vendor:hostel_vendors(name)').order('name');
-    if (vendorId && vendorId !== 'all') {
-      query = query.eq('vendor_id', vendorId);
-    }
-    const { data, error } = await query;
+  getItems: async () => {
+    const { data, error } = await supabase.from('hostel_items').select('*').order('name');
     if (error) throw error;
     return data;
   },
 
-  createItem: async (itemData: { vendor_id: string; name: string; category?: string; default_unit?: string }) => {
+  createItem: async (itemData: { name: string; category?: string; default_unit?: string }) => {
     const { data, error } = await supabase.from('hostel_items').insert([itemData]).select().single();
     if (error) throw error;
     return data;
@@ -1074,12 +1070,11 @@ export const api = {
     if (error) throw error;
   },
 
-  getPurchases: async (hostelId?: string) => {
-    let query = supabase
+  getPurchases: async () => {
+    const { data, error } = await supabase
       .from('hostel_purchases')
       .select(`
         *,
-        hostel:hostels(name),
         vendor:hostel_vendors(name),
         items:hostel_purchase_items(
           *,
@@ -1087,17 +1082,12 @@ export const api = {
         )
       `)
       .order('purchase_date', { ascending: false });
-      
-    if (hostelId && hostelId !== 'all') {
-      query = query.eq('hostel_id', hostelId);
-    }
-    const { data, error } = await query;
     if (error) throw error;
     return data;
   },
 
   createPurchase: async (
-    purchaseData: { hostel_id: string; vendor_id: string; purchase_date: string; total_amount: number; notes: string },
+    purchaseData: { vendor_id: string; purchase_date: string; total_amount: number; notes: string },
     items: { item_id: string; quantity: number; unit: string; price_per_unit: number; total_price: number }[]
   ) => {
     // 1. Create Purchase

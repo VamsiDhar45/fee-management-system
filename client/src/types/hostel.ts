@@ -18,7 +18,6 @@ export interface Hostel {
 
 export interface HostelItem {
   id: string;
-  vendor_id: string;
   name: string;
   category: string | null;
   default_unit: string | null;
@@ -28,9 +27,7 @@ export interface HostelItem {
 
 export interface HostelPurchase {
   id: string;
-  hostel_id: string;
   vendor_id: string;
-  hostel?: Hostel;
   vendor?: HostelVendor;
   purchase_date: string;
   total_amount: number;

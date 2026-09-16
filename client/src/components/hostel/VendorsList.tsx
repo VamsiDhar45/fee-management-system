@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Search, Building2, Phone, MapPin } from 'lucide-react';
+import { Plus, Search, Building2, Phone, MapPin, Edit2 } from 'lucide-react';
 import { api } from '../../api';
 import { Modal } from '../Modal';
 import { Card, CardContent } from '../ui/card';
@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 export default function VendorsList() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
   
   const queryClient = useQueryClient();
 
@@ -46,9 +47,37 @@ export default function VendorsList() {
     }
   });
 
+  const updateMutation = useMutation({
+    mutationFn: (data: { id: string; vendor: any }) => api.updateVendor(data.id, data.vendor),
+    onSuccess: () => {
+      toast.success('Vendor updated successfully');
+      queryClient.invalidateQueries({ queryKey: ['hostel_vendors'] });
+      setIsModalOpen(false);
+      setEditId(null);
+      setFormData({ name: '', contact_number: '', address: '' });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Failed to update vendor');
+    }
+  });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    mutation.mutate(formData);
+    if (editId) {
+      updateMutation.mutate({ id: editId, vendor: formData });
+    } else {
+      mutation.mutate(formData);
+    }
+  };
+
+  const openEditModal = (vendor: any) => {
+    setEditId(vendor.id);
+    setFormData({
+      name: vendor.name,
+      contact_number: vendor.contact_number || '',
+      address: vendor.address || ''
+    });
+    setIsModalOpen(true);
   };
 
   if (isLoading) return <div className="p-8 text-center text-muted-foreground">Loading vendors...</div>;
@@ -66,7 +95,11 @@ export default function VendorsList() {
             className="pl-10"
           />
         </div>
-        <Button onClick={() => setIsModalOpen(true)} className="gap-2">
+        <Button onClick={() => {
+          setEditId(null);
+          setFormData({ name: '', contact_number: '', address: '' });
+          setIsModalOpen(true);
+        }} className="gap-2">
           <Plus size={18} /> Add Vendor
         </Button>
       </div>
@@ -81,10 +114,15 @@ export default function VendorsList() {
             <Card key={vendor.id} className="hover:border-primary/50 transition-colors">
               <CardContent className="p-5">
                 <div className="flex justify-between items-start mb-4">
-                  <h3 className="font-semibold text-lg">{vendor.name}</h3>
-                  <div className="p-2 bg-primary/10 rounded-full">
-                    <Building2 size={16} className="text-primary" />
+                  <div className="flex gap-3 items-center">
+                    <div className="p-2 bg-primary/10 rounded-full">
+                      <Building2 size={16} className="text-primary" />
+                    </div>
+                    <h3 className="font-semibold text-lg">{vendor.name}</h3>
                   </div>
+                  <Button variant="ghost" size="icon" onClick={() => openEditModal(vendor)} className="h-8 w-8 text-muted-foreground hover:text-primary">
+                    <Edit2 size={16} />
+                  </Button>
                 </div>
                 
                 <div className="space-y-2 text-sm text-muted-foreground">
@@ -107,7 +145,7 @@ export default function VendorsList() {
         )}
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Add New Vendor">
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editId ? "Edit Vendor" : "Add New Vendor"}>
         <form onSubmit={handleSubmit} className="space-y-4">
 
           <div className="space-y-2">
@@ -144,8 +182,8 @@ export default function VendorsList() {
             <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending ? 'Saving...' : 'Save Vendor'}
+            <Button type="submit" disabled={mutation.isPending || updateMutation.isPending}>
+              {mutation.isPending || updateMutation.isPending ? 'Saving...' : (editId ? 'Update Vendor' : 'Save Vendor')}
             </Button>
           </div>
         </form>
