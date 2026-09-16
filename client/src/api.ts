@@ -1000,5 +1000,126 @@ export const api = {
     return response.json();
   },
 
+  // HOSTEL MANAGEMENT APIs
+  getHostels: async () => {
+    const { data, error } = await supabase.from('hostels').select('*').order('name');
+    if (error) throw error;
+    return data;
+  },
 
+  createHostel: async (hostelData: { name: string; capacity?: number | null; address?: string }) => {
+    const { data, error } = await supabase.from('hostels').insert([hostelData]).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  updateHostel: async (id: string, hostelData: { name: string; capacity?: number | null; address?: string }) => {
+    const { data, error } = await supabase.from('hostels').update(hostelData).eq('id', id).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  deleteHostel: async (id: string) => {
+    const { error } = await supabase.from('hostels').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  getVendors: async () => {
+    const { data, error } = await supabase.from('hostel_vendors').select('*').order('name');
+    if (error) throw error;
+    return data;
+  },
+
+  createVendor: async (vendorData: { name: string; contact_number?: string; address?: string }) => {
+    const { data, error } = await supabase.from('hostel_vendors').insert([vendorData]).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  updateVendor: async (id: string, vendorData: { name: string; contact_number?: string; address?: string }) => {
+    const { data, error } = await supabase.from('hostel_vendors').update(vendorData).eq('id', id).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  deleteVendor: async (id: string) => {
+    const { error } = await supabase.from('hostel_vendors').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  getItems: async (vendorId?: string) => {
+    let query = supabase.from('hostel_items').select('*, vendor:hostel_vendors(name)').order('name');
+    if (vendorId && vendorId !== 'all') {
+      query = query.eq('vendor_id', vendorId);
+    }
+    const { data, error } = await query;
+    if (error) throw error;
+    return data;
+  },
+
+  createItem: async (itemData: { vendor_id: string; name: string; category?: string; default_unit?: string }) => {
+    const { data, error } = await supabase.from('hostel_items').insert([itemData]).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  updateItem: async (id: string, itemData: { name: string; category?: string; default_unit?: string }) => {
+    const { data, error } = await supabase.from('hostel_items').update(itemData).eq('id', id).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  deleteItem: async (id: string) => {
+    const { error } = await supabase.from('hostel_items').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  getPurchases: async (hostelId?: string) => {
+    let query = supabase
+      .from('hostel_purchases')
+      .select(`
+        *,
+        hostel:hostels(name),
+        vendor:hostel_vendors(name),
+        items:hostel_purchase_items(
+          *,
+          item:hostel_items(name)
+        )
+      `)
+      .order('purchase_date', { ascending: false });
+      
+    if (hostelId && hostelId !== 'all') {
+      query = query.eq('hostel_id', hostelId);
+    }
+    const { data, error } = await query;
+    if (error) throw error;
+    return data;
+  },
+
+  createPurchase: async (
+    purchaseData: { hostel_id: string; vendor_id: string; purchase_date: string; total_amount: number; notes: string },
+    items: { item_id: string; quantity: number; unit: string; price_per_unit: number; total_price: number }[]
+  ) => {
+    // 1. Create Purchase
+    const { data: purchase, error: purchaseError } = await supabase
+      .from('hostel_purchases')
+      .insert([purchaseData])
+      .select()
+      .single();
+    if (purchaseError) throw purchaseError;
+
+    // 2. Create Purchase Items
+    if (items.length > 0) {
+      const itemsData = items.map(item => ({
+        ...item,
+        purchase_id: purchase.id
+      }));
+      const { error: itemsError } = await supabase
+        .from('hostel_purchase_items')
+        .insert(itemsData);
+      if (itemsError) throw itemsError;
+    }
+
+    return purchase;
+  }
 };

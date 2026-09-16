@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { Home, Users, IndianRupee, Settings, Building, Shield, FileText, AlertCircle, CreditCard, Moon, Sun, LogOut, BarChart3 } from 'lucide-react';
+import { Home, Users, IndianRupee, Settings, Building, Shield, FileText, AlertCircle, CreditCard, Moon, Sun, LogOut, BarChart3, Store } from 'lucide-react';
 import './index.css';
 import { OrganizationSetup } from './pages/OrganizationSetup';
 import { StudentsList } from './pages/StudentsList';
@@ -15,6 +15,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Login } from './pages/Login';
 import Reports from './pages/Reports';
 import { ReceiptTemplates } from './pages/ReceiptTemplates';
+import { HostelManagement } from './pages/HostelManagement';
 
 import { useTheme } from './contexts/ThemeContext';
 import { Button } from './components/ui/button';
@@ -69,6 +70,7 @@ function Sidebar({ userRole }: { userRole: 'admin' | 'manager' | 'accountant' })
           {userRole !== 'accountant' && <NavItem to="/reports" icon={BarChart3} label="Reports" />}
           {(userRole === 'admin' || userRole === 'manager') && (
             <>
+              <NavItem to="/hostel" icon={Store} label="Hostel Management" />
               <NavItem to="/organization" icon={Building} label="Organization" />
               <NavItem to="/settings" icon={Settings} label="Settings" />
               <NavItem to="/receipt-preview" icon={FileText} label="Receipt Preview" />
@@ -143,6 +145,10 @@ function AuthenticatedApp() {
                 <Route path="/reports" element={activeRole === 'accountant' ? <Navigate to="/students" replace /> : <Reports />} />
                 
                 {/* Protected Management Routes */}
+                <Route 
+                  path="/hostel" 
+                  element={isManagement ? <HostelManagement /> : <Navigate to="/" replace />} 
+                />
                 <Route 
                   path="/organization" 
                   element={isManagement ? <OrganizationSetup userRole={activeRole as 'manager' | 'accountant'} /> : <Navigate to="/" replace />} 
