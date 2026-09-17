@@ -77,8 +77,11 @@ app.post('/api/notify-expense', async (req, res) => {
     const params = `${amount},${category},${date}`;
     console.log(`Sending SMS to ${phones.length} phones with params: ${params}`);
     
-    // We fire a request for each phone number
-    const promises = phones.map((phone: string) => {
+    // We fire a request for each phone number sequentially
+    const results: any[] = [];
+    const failed: any[] = [];
+
+    for (const phone of phones) {
       const url = new URL('http://bhashsms.com/api/sendmsgutil.php');
       url.searchParams.append('user', SMS_API_USER);
       url.searchParams.append('pass', SMS_API_PASS);
@@ -92,20 +95,21 @@ app.post('/api/notify-expense', async (req, res) => {
       const requestUrl = url.toString();
       console.log(`Firing URL: ${requestUrl}`);
 
-      return fetch(requestUrl)
-        .then(async (response) => {
-          const text = await response.text();
-          console.log(`Response for ${phone}: ${response.status} ${text}`);
-          if (!response.ok) {
-            throw new Error(`SMS API error for ${phone}: ${response.statusText}`);
-          }
-          return { phone, response: text };
-        });
-    });
+      try {
+        const response = await fetch(requestUrl);
+        const text = await response.text();
+        console.log(`Response for ${phone}: ${response.status} ${text}`);
+        if (!response.ok) {
+          throw new Error(`SMS API error for ${phone}: ${response.statusText}`);
+        }
+        results.push({ phone, status: 'fulfilled', response: text });
+      } catch (err: any) {
+        console.error(`Failed to send SMS to ${phone}:`, err.message);
+        failed.push({ phone, status: 'rejected', error: err.message });
+        results.push({ phone, status: 'rejected', error: err.message });
+      }
+    }
 
-    const results = await Promise.allSettled(promises);
-    
-    const failed = results.filter(r => r.status === 'rejected');
     if (failed.length > 0) {
       console.warn('Some SMS notifications failed:', failed);
     }
