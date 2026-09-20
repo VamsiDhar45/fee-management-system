@@ -581,7 +581,33 @@ export const api = {
       p_search_term: searchTerm || null
     });
     
-    if (error) throw error;
+    if (error) {
+      console.warn('RPC get_transaction_stats failed, falling back to client-side aggregation:', error);
+      let query = supabase.from('incomes').select('amount, payment_mode, entity_id, status, created_at, students!inner(name, entities(name))').eq('status', 'ACTIVE');
+      
+      if (startDate) query = query.gte('created_at', startDate);
+      if (endDate) query = query.lte('created_at', endDate);
+      if (entityId && entityId !== 'all') query = query.eq('entity_id', entityId);
+      if (paymentMode && paymentMode !== 'all') query = query.eq('payment_mode', paymentMode);
+      if (searchTerm) query = query.ilike('students.name', `%${searchTerm}%`);
+      
+      const { data: incomes, error: fetchError } = await query;
+      if (fetchError) throw fetchError;
+      
+      let totalAmount = 0;
+      const entityMap: Record<string, number> = {};
+      
+      incomes?.forEach((inc: any) => {
+        const amt = Number(inc.amount) || 0;
+        totalAmount += amt;
+        const entName = inc.students?.entities?.name || 'Unknown Entity';
+        entityMap[entName] = (entityMap[entName] || 0) + amt;
+      });
+      
+      const entityBreakdown = Object.entries(entityMap).map(([entityName, amount]) => ({ entityName, amount }));
+      return { totalAmount, entityBreakdown };
+    }
+    
     return data;
   },
 
@@ -592,7 +618,34 @@ export const api = {
       p_end_date: endDate || null,
       p_entity_id: entityId || null
     });
-    if (error) throw error;
+    
+    if (error) {
+      console.warn('RPC get_dcr_report failed, falling back to client-side aggregation:', error);
+      let query = supabase.from('incomes').select('amount, payment_mode, created_at').eq('status', 'ACTIVE');
+      
+      if (startDate) query = query.gte('created_at', startDate);
+      if (endDate) query = query.lte('created_at', endDate);
+      if (entityId && entityId !== 'all') query = query.eq('entity_id', entityId);
+      
+      const { data: incomes, error: fetchError } = await query;
+      if (fetchError) throw fetchError;
+      
+      const grouped: Record<string, { collection_date: string, payment_mode: string, total_amount: number }> = {};
+      
+      incomes.forEach((inc: any) => {
+        const date = new Date(inc.created_at).toISOString().split('T')[0];
+        const mode = inc.payment_mode || 'UNKNOWN';
+        const key = `${date}_${mode}`;
+        
+        if (!grouped[key]) {
+          grouped[key] = { collection_date: date, payment_mode: mode, total_amount: 0 };
+        }
+        grouped[key].total_amount += Number(inc.amount) || 0;
+      });
+      
+      return Object.values(grouped).sort((a, b) => b.collection_date.localeCompare(a.collection_date) || a.payment_mode.localeCompare(b.payment_mode));
+    }
+    
     return data;
   },
 
@@ -627,11 +680,11 @@ export const api = {
   getExpenseSummaryReport: async (startDate?: string, endDate?: string, entityId?: string, paymentMode?: string) => {
     let query = supabase
       .from('expenses')
-      .select('amount, created_at, entity_id, status, payment_mode, expense_categories!inner(name)')
-      .eq('status', 'APPROVED');
+      .select('amount, expense_date, created_at, entity_id, status, payment_mode, expense_categories!inner(name)')
+      .in('status', ['APPROVED', 'PAID']);
 
-    if (startDate) query = query.gte('created_at', startDate);
-    if (endDate) query = query.lte('created_at', endDate);
+    if (startDate) query = query.gte('expense_date', startDate);
+    if (endDate) query = query.lte('expense_date', endDate);
     if (entityId) query = query.eq('entity_id', entityId);
     if (paymentMode) query = query.eq('payment_mode', paymentMode);
 
@@ -890,9 +943,36 @@ export const api = {
     });
     
     if (error) {
-      console.error('RPC Error (get_expense_stats):', error);
-      // Fallback if RPC is not deployed yet to avoid breaking UI completely
-      return { totalAmount: 0, pendingCount: 0 };
+      console.warn('RPC Error (get_expense_stats), falling back to client-side aggregation:', error);
+      
+      let query = supabase.from('expenses').select('amount, status');
+      
+      if (entityId) query = query.eq('entity_id', entityId);
+      if (categoryId) query = query.eq('category_id', categoryId);
+      if (status) query = query.eq('status', status);
+      if (startDate) query = query.gte('expense_date', startDate);
+      if (endDate) query = query.lte('expense_date', endDate);
+      if (searchTerm) query = query.ilike('description', `%${searchTerm}%`);
+      
+      const { data: expenses, error: fetchError } = await query;
+      
+      if (fetchError || !expenses) {
+        return { totalAmount: 0, pendingCount: 0 };
+      }
+      
+      let totalAmount = 0;
+      let pendingCount = 0;
+      
+      expenses.forEach(exp => {
+        if (exp.status !== 'REJECTED') {
+          totalAmount += Number(exp.amount) || 0;
+        }
+        if (exp.status === 'PENDING') {
+          pendingCount++;
+        }
+      });
+      
+      return { totalAmount, pendingCount };
     }
     
     return data;
