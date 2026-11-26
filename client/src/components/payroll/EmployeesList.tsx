@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Search, Edit2, Phone, MapPin, Building2, Calendar, IndianRupee, CreditCard, User, Briefcase, Filter } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Phone, MapPin, Building2, Calendar, IndianRupee, CreditCard, User, Briefcase, Filter } from 'lucide-react';
 import { api, type Entity } from '../../api';
 import type { PayrollEmployee, CreatePayrollEmployeeInput } from '../../types/payroll';
 import { EmployeeModal } from './EmployeeModal';
@@ -54,6 +54,26 @@ export default function EmployeesList() {
       toast.error(error.message || 'Failed to update employee');
     },
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.deletePayrollEmployee(id),
+    onSuccess: () => {
+      toast.success('Employee deleted successfully');
+      queryClient.invalidateQueries({ queryKey: ['payroll_employees'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll_monthly_records'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll_advances'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll_attendance'] });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Failed to delete employee');
+    },
+  });
+
+  const handleDeleteEmployee = (emp: PayrollEmployee) => {
+    if (window.confirm(`Are you sure you want to delete employee "${emp.name}"? This action will permanently remove their records.`)) {
+      deleteMutation.mutate(emp.id);
+    }
+  };
 
   const handleOpenCreateModal = () => {
     setEditingEmployee(null);
@@ -297,15 +317,27 @@ export default function EmployeesList() {
                     </td>
 
                     <td className="py-3 px-4 text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleOpenEditModal(emp)}
-                        className="h-8 w-8 p-0"
-                        title="Edit employee"
-                      >
-                        <Edit2 size={15} />
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleOpenEditModal(emp)}
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-muted"
+                          title="Edit employee"
+                        >
+                          <Edit2 size={15} />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteEmployee(emp)}
+                          disabled={deleteMutation.isPending}
+                          className="h-8 w-8 p-0 text-destructive/80 hover:text-destructive hover:bg-destructive/10"
+                          title="Delete employee"
+                        >
+                          <Trash2 size={15} />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
