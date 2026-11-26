@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { Home, Users, IndianRupee, Settings, Building, Shield, FileText, AlertCircle, CreditCard, Moon, Sun, LogOut, BarChart3, Store } from 'lucide-react';
+import { Home, Users, IndianRupee, Settings, Building, Shield, FileText, AlertCircle, CreditCard, Moon, Sun, LogOut, BarChart3, Store, WalletCards } from 'lucide-react';
 import './index.css';
 import { OrganizationSetup } from './pages/OrganizationSetup';
 import { StudentsList } from './pages/StudentsList';
@@ -16,6 +16,7 @@ import { Login } from './pages/Login';
 import Reports from './pages/Reports';
 import { ReceiptTemplates } from './pages/ReceiptTemplates';
 import { HostelManagement } from './pages/HostelManagement';
+import { PayrollManagement } from './pages/PayrollManagement';
 
 import { useTheme } from './contexts/ThemeContext';
 import { Button } from './components/ui/button';
@@ -71,6 +72,7 @@ function Sidebar({ userRole }: { userRole: 'admin' | 'manager' | 'accountant' })
           {(userRole === 'admin' || userRole === 'manager') && (
             <>
               <NavItem to="/hostel" icon={Store} label="Kitchen Management" />
+              <NavItem to="/payroll" icon={WalletCards} label="Payroll Management" />
               <NavItem to="/organization" icon={Building} label="Organization" />
               <NavItem to="/settings" icon={Settings} label="Settings" />
               <NavItem to="/receipt-preview" icon={FileText} label="Receipt Preview" />
@@ -148,6 +150,10 @@ function AuthenticatedApp() {
                 <Route 
                   path="/hostel" 
                   element={isManagement ? <HostelManagement /> : <Navigate to="/" replace />} 
+                />
+                <Route 
+                  path="/payroll" 
+                  element={isManagement ? <PayrollManagement /> : <Navigate to="/" replace />} 
                 />
                 <Route 
                   path="/organization" 

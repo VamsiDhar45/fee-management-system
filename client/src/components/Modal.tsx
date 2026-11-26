@@ -52,7 +52,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }
                 <X size={20} />
               </button>
             </div>
-            <div className="p-6 overflow-y-auto max-h-[calc(100vh-10rem)]">
+            <div className="p-6 overflow-y-auto max-h-[calc(100vh-10rem)] modern-scrollbar">
               {children}
             </div>
           </motion.div>

@@ -1211,5 +1211,311 @@ export const api = {
     await supabase.from('hostel_purchase_items').delete().eq('purchase_id', id);
     const { error } = await supabase.from('hostel_purchases').delete().eq('id', id);
     if (error) throw error;
+  },
+
+  // --- Payroll Module ---
+  getPayrollEmployees: async (filters?: { status?: string; entity_id?: string }) => {
+    let query = supabase
+      .from('payroll_employees')
+      .select('*, entity:entities(id, name)')
+      .order('created_at', { ascending: false });
+
+    if (filters?.status) {
+      query = query.eq('status', filters.status);
+    }
+    if (filters?.entity_id) {
+      query = query.eq('entity_id', filters.entity_id);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data;
+  },
+
+  createPayrollEmployee: async (employeeData: any) => {
+    const { data, error } = await supabase
+      .from('payroll_employees')
+      .insert([employeeData])
+      .select('*, entity:entities(id, name)')
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  updatePayrollEmployee: async (id: string, employeeData: any) => {
+    const { data, error } = await supabase
+      .from('payroll_employees')
+      .update(employeeData)
+      .eq('id', id)
+      .select('*, entity:entities(id, name)')
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  deletePayrollEmployee: async (id: string) => {
+    const { error } = await supabase
+      .from('payroll_employees')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+  },
+
+  // --- Payroll Advances ---
+  getPayrollAdvances: async (filters?: { status?: string; employee_id?: string }) => {
+    let query = supabase
+      .from('payroll_advances')
+      .select('*, employee:payroll_employees(*, entity:entities(name)), installments:payroll_advance_installments(*)')
+      .order('created_at', { ascending: false });
+
+    if (filters?.status) {
+      query = query.eq('status', filters.status);
+    }
+    if (filters?.employee_id) {
+      query = query.eq('employee_id', filters.employee_id);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data;
+  },
+
+  createPayrollAdvance: async (advanceInput: {
+    employee_id: string;
+    advance_amount: number;
+    advance_date: string;
+    deduction_start_month: string;
+    installments_count: number;
+    installment_amount: number;
+    payment_mode: string;
+    notes?: string;
+  }) => {
+    // 1. Create the advance record
+    const { data: advance, error: advError } = await supabase
+      .from('payroll_advances')
+      .insert([{
+        employee_id: advanceInput.employee_id,
+        advance_amount: advanceInput.advance_amount,
+        advance_date: advanceInput.advance_date,
+        deduction_start_month: advanceInput.deduction_start_month,
+        installments_count: advanceInput.installments_count,
+        installment_amount: advanceInput.installment_amount,
+        payment_mode: advanceInput.payment_mode,
+        notes: advanceInput.notes || null,
+        status: 'active',
+        recovered_amount: 0
+      }])
+      .select('*, employee:payroll_employees(*)')
+      .single();
+
+    if (advError) throw advError;
+
+    // 2. Generate installment schedule
+    const installments = [];
+    const [startYear, startMonth] = advanceInput.deduction_start_month.split('-').map(Number);
+    let remaining = advanceInput.advance_amount;
+
+    for (let i = 0; i < advanceInput.installments_count; i++) {
+      const monthOffset = (startMonth - 1 + i);
+      const year = startYear + Math.floor(monthOffset / 12);
+      const month = (monthOffset % 12) + 1;
+      const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+      
+      const isLast = i === advanceInput.installments_count - 1;
+      const instAmt = isLast ? remaining : Math.min(remaining, advanceInput.installment_amount);
+      remaining -= instAmt;
+
+      installments.push({
+        advance_id: advance.id,
+        installment_number: i + 1,
+        month_year: monthStr,
+        amount: instAmt,
+        status: 'pending'
+      });
+    }
+
+    if (installments.length > 0) {
+      const { error: instError } = await supabase
+        .from('payroll_advance_installments')
+        .insert(installments);
+      if (instError) throw instError;
+    }
+
+    return advance;
+  },
+
+  updateInstallmentStatus: async (installmentId: string, status: 'pending' | 'recovered' | 'skipped' | 'cancelled', advanceId: string) => {
+    const { error } = await supabase
+      .from('payroll_advance_installments')
+      .update({
+        status,
+        recovered_at: status === 'recovered' ? new Date().toISOString() : null
+      })
+      .eq('id', installmentId);
+    if (error) throw error;
+
+    // Recalculate advance recovered_amount and status
+    const { data: allInsts, error: fetchErr } = await supabase
+      .from('payroll_advance_installments')
+      .select('amount, status')
+      .eq('advance_id', advanceId);
+    if (fetchErr) throw fetchErr;
+
+    const recoveredTotal = (allInsts || [])
+      .filter((ins: any) => ins.status === 'recovered')
+      .reduce((sum: number, ins: any) => sum + Number(ins.amount), 0);
+
+    const allRecoveredOrCancelled = (allInsts || []).length > 0 &&
+      (allInsts || []).every((ins: any) => ins.status === 'recovered' || ins.status === 'cancelled');
+
+    await supabase
+      .from('payroll_advances')
+      .update({
+        recovered_amount: recoveredTotal,
+        status: allRecoveredOrCancelled ? 'completed' : 'active'
+      })
+      .eq('id', advanceId);
+  },
+
+  cancelPayrollAdvance: async (id: string) => {
+    await supabase
+      .from('payroll_advance_installments')
+      .update({ status: 'cancelled' })
+      .eq('advance_id', id)
+      .eq('status', 'pending');
+
+    const { error } = await supabase
+      .from('payroll_advances')
+      .update({ status: 'cancelled' })
+      .eq('id', id);
+    if (error) throw error;
+  },
+
+  // --- Monthly Payroll Finalization & Reporting ---
+  getMonthlyPayrollRecords: async (monthYear: string, entityId?: string, paymentMode?: string) => {
+    let query = supabase
+      .from('payroll_monthly_records')
+      .select('*, employee:payroll_employees(*, entity:entities(id, name))')
+      .eq('month_year', monthYear);
+
+    const { data: records, error } = await query;
+    if (error) throw error;
+
+    let filtered = records || [];
+    if (entityId && entityId !== 'all') {
+      filtered = filtered.filter((r: any) => r.employee?.entity_id === entityId);
+    }
+    if (paymentMode && paymentMode !== 'all') {
+      filtered = filtered.filter((r: any) => r.payment_mode === paymentMode);
+    }
+
+    return filtered;
+  },
+
+  saveMonthlyPayrollRecord: async (record: any) => {
+    const { data, error } = await supabase
+      .from('payroll_monthly_records')
+      .upsert([record], { onConflict: 'employee_id,month_year' })
+      .select('*, employee:payroll_employees(*, entity:entities(id, name))')
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  saveBatchMonthlyPayrollRecords: async (records: any[]) => {
+    if (records.length === 0) return [];
+    const { data, error } = await supabase
+      .from('payroll_monthly_records')
+      .upsert(records, { onConflict: 'employee_id,month_year' })
+      .select('*, employee:payroll_employees(*, entity:entities(id, name))');
+    if (error) throw error;
+    return data;
+  },
+
+  getScheduledInstallmentsForMonth: async (monthYear: string) => {
+    const { data, error } = await supabase
+      .from('payroll_advance_installments')
+      .select('*, advance:payroll_advances(*, employee:payroll_employees(*))')
+      .eq('month_year', monthYear)
+      .in('status', ['pending', 'recovered']);
+    if (error) throw error;
+    return data;
+  },
+
+  // --- Payroll Tax & Statutory Settings ---
+  getPayrollTaxSettings: async () => {
+    const { data, error } = await supabase
+      .from('payroll_tax_settings')
+      .select('*')
+      .eq('id', 'default')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) {
+      // Default fallback
+      return {
+        id: 'default',
+        tds_threshold: 50000,
+        tds_rate_percent: 10,
+        pt_threshold: 15000,
+        pt_flat_amount: 200,
+        free_leaves_per_month: 2
+      };
+    }
+    return data;
+  },
+
+  updatePayrollTaxSettings: async (settings: {
+    tds_threshold: number;
+    tds_rate_percent: number;
+    pt_threshold: number;
+    pt_flat_amount: number;
+    free_leaves_per_month: number;
+  }) => {
+    const { data, error } = await supabase
+      .from('payroll_tax_settings')
+      .upsert([{ id: 'default', ...settings, updated_at: new Date().toISOString() }])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  // --- Payroll Daily Attendance Management ---
+  getAttendanceByDate: async (dateStr: string) => {
+    const { data, error } = await supabase
+      .from('payroll_attendance')
+      .select('*, employee:payroll_employees(*, entity:entities(name))')
+      .eq('attendance_date', dateStr);
+    if (error) throw error;
+    return data;
+  },
+
+  getAttendanceByMonth: async (yearMonth: string) => {
+    // yearMonth = 'YYYY-MM'
+    const startDate = `${yearMonth}-01`;
+    // Last day of month
+    const [y, m] = yearMonth.split('-').map(Number);
+    const lastDay = new Date(y, m, 0).getDate();
+    const endDate = `${yearMonth}-${String(lastDay).padStart(2, '0')}`;
+
+    const { data, error } = await supabase
+      .from('payroll_attendance')
+      .select('*, employee:payroll_employees(*, entity:entities(name))')
+      .gte('attendance_date', startDate)
+      .lte('attendance_date', endDate);
+    if (error) throw error;
+    return data;
+  },
+
+  saveBatchAttendance: async (attendanceRecords: any[]) => {
+    if (attendanceRecords.length === 0) return [];
+    const { data, error } = await supabase
+      .from('payroll_attendance')
+      .upsert(attendanceRecords, { onConflict: 'employee_id,attendance_date' })
+      .select('*, employee:payroll_employees(*, entity:entities(name))');
+    if (error) throw error;
+    return data;
   }
 };
